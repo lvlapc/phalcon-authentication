@@ -6,15 +6,11 @@ use Lvlapc\Authentication\CredentialsCheckerInterface;
 use Lvlapc\Authentication\UserInterface;
 use Lvlapc\Authentication\UserProviderInterface;
 
-/**
- * Class AuthenticationInterface
- *
- * @package Lvlapc
- */
 interface AuthenticationInterface
 {
 	/**
 	 * Sets an object which retrieves user from storage system
+	 * (uses when user logs in on "login page")
 	 *
 	 * @param UserProviderInterface $provider
 	 *
@@ -24,6 +20,7 @@ interface AuthenticationInterface
 
 	/**
 	 * Sets an object which check user credentials
+	 * (uses when user logs in on "login page")
 	 *
 	 * @param CredentialsCheckerInterface $checker
 	 *
@@ -32,32 +29,23 @@ interface AuthenticationInterface
 	public function setCredentialsChecker(CredentialsCheckerInterface $checker): AuthenticationInterface;
 
 	/**
-	 * Tells whether to use or not remember me option among sessions
-	 *
-	 * @param bool $use
-	 *
-	 * @return AuthenticationInterface
-	 */
-	public function useRememberMe(bool $use): AuthenticationInterface;
-
-	/**
 	 * Authenticates user with UserProvider and CredentialsChecker
 	 *
 	 * @return bool
 	 */
-	public function authenticate(): bool;
+	public function signIn(): bool;
 
 	/**
 	 * Is user authenticated
 	 *
 	 * @return bool
 	 */
-	public function isLoggedIn(): bool;
+	public function isSigned(): bool;
 
 	/**
 	 * Clearing authentication data
 	 */
-	public function logout(): void;
+	public function signOut(): void;
 
 	/**
 	 * Retrieves user with last set UserProvider

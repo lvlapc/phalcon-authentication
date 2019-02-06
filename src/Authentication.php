@@ -2,27 +2,25 @@
 
 namespace Lvlapc;
 
-use Lvlapc\Authentication\CredentialsChecker\WithoutPassword;
+use Lvlapc\Authentication\AuthenticatorManager;
 use Lvlapc\Authentication\CredentialsCheckerInterface;
 use Lvlapc\Authentication\Exception;
-use Lvlapc\Authentication\Strategy\Cookie;
-use Lvlapc\Authentication\Strategy\Session;
 use Lvlapc\Authentication\UserInterface;
-use Lvlapc\Authentication\UserProvider\Pipe;
 use Lvlapc\Authentication\UserProviderInterface;
 use Phalcon\Events\Manager;
 use Phalcon\Mvc\User\Component;
 
 /**
- * Class Auth
+ * Class Authentication
  *
  * @package Lvlapc
  */
 class Authentication extends Component implements AuthenticationInterface
 {
-	protected $_isLoggedIn    = false;
-
-	protected $_useRememberMe = false;
+	/**
+	 * @var bool
+	 */
+	protected $isSigned = false;
 
 	/**
 	 * @var UserProviderInterface
@@ -35,34 +33,40 @@ class Authentication extends Component implements AuthenticationInterface
 	protected $credentialsChecker;
 
 	/**
-	 * @var Session
+	 * @var AuthenticatorManager
 	 */
-	protected $sessionStrategy;
+	protected $authenticatorManager;
 
 	/**
-	 * @var Cookie
+	 * @var UserInterface
 	 */
-	protected $cookieStrategy;
+	protected $user;
 
 	/**
 	 * Authentication constructor.
 	 *
-	 * @param Session $sessionStrategy
-	 * @param Cookie  $cookieStrategy
+	 * @param AuthenticatorManager $authenticatorManager
+	 *
+	 * @throws Exception
 	 */
-	public function __construct(Session $sessionStrategy, Cookie $cookieStrategy)
+	public function __construct(AuthenticatorManager $authenticatorManager)
 	{
-		$this->sessionStrategy = $sessionStrategy;
-		$this->cookieStrategy  = $cookieStrategy;
+		if ( !$authenticatorManager->hasAuthenticators() ) {
+			throw new Exception('AuthenticatorManager should have at least one Authenticator');
+		}
 
-		$this->initialize();
+		$this->authenticatorManager = $authenticatorManager;
+
+		$this->isSigned = $this->authenticatorManager->isSigned();
 	}
 
-	protected function initialize()
-	{
-		$this->_isLoggedIn = $this->isLoggedWithSession() || $this->isLoggedWithRememberCookie();
-	}
-
+	/**
+	 * Sets an object which retrieves user from storage system
+	 *
+	 * @param UserProviderInterface $provider
+	 *
+	 * @return AuthenticationInterface
+	 */
 	public function setUserProvider(UserProviderInterface $provider): AuthenticationInterface
 	{
 		$this->userProvider = $provider;
@@ -70,6 +74,13 @@ class Authentication extends Component implements AuthenticationInterface
 		return $this;
 	}
 
+	/**
+	 * Sets an object which check user credentials
+	 *
+	 * @param CredentialsCheckerInterface $checker
+	 *
+	 * @return AuthenticationInterface
+	 */
 	public function setCredentialsChecker(CredentialsCheckerInterface $checker): AuthenticationInterface
 	{
 		$this->credentialsChecker = $checker;
@@ -77,34 +88,12 @@ class Authentication extends Component implements AuthenticationInterface
 		return $this;
 	}
 
-	public function useRememberMe(bool $use = true): AuthenticationInterface
-	{
-		$this->_useRememberMe = $use;
-
-		return $this;
-	}
-
-	/**
-	 * Retrieves user from last set provider
-	 *
-	 * @return UserInterface
-	 * @throws Exception
-	 */
-	public function getUser(): UserInterface
-	{
-		if ( !($this->userProvider instanceof UserProviderInterface) ) {
-			throw new Exception('User provider have not set');
-		}
-
-		return $this->userProvider->getUser();
-	}
-
 	/**
 	 *
 	 * @return bool
 	 * @throws Exception
 	 */
-	public function authenticate(): bool
+	public function signIn(): bool
 	{
 		if ( $this->userProvider === null ) {
 			throw new Exception('You should set "UserProvider" before calling "authenticate" method');
@@ -125,73 +114,65 @@ class Authentication extends Component implements AuthenticationInterface
 		}
 
 		if ( $this->_eventsManager instanceof Manager ) {
-			$fire = $this->_eventsManager->fire('authentication:beforeAuthenticate', $this);
+			$fire = $this->_eventsManager->fire('authentication:beforeAuthenticate', $this, $user);
 
 			if ( $fire === false ) {
 				return false;
 			}
 		}
 
-		if ( $this->credentialsChecker->check($user) ) {
+		if ( !$this->credentialsChecker->check($user) ) {
 			if ( $this->_eventsManager instanceof Manager ) {
-				$this->_eventsManager->fire('authentication:incorrectPassword', $this, null, false);
+				$this->_eventsManager->fire('authentication:incorrectPassword', $this, $user, false);
 			}
 
 			return false;
 		}
 
-		$this->sessionStrategy->save($user);
+		$this->authenticatorManager->createTokens($user);
 
-		if ( $this->_useRememberMe ) {
-			$this->cookieStrategy->save($user);
-		}
+		$this->user = $user;
+
+		$this->isSigned = true;
 
 		if ( $this->_eventsManager instanceof Manager ) {
-			$this->_eventsManager->fire('authentication:afterAuthenticate', $this, null, false);
+			$this->_eventsManager->fire('authentication:afterAuthenticate', $this, $user, false);
 		}
-
-		$this->_isLoggedIn = true;
 
 		return true;
 	}
 
-	public function logout(): void
+	/**
+	 * Is user is signed in
+	 *
+	 * @return bool
+	 */
+	public function isSigned(): bool
 	{
-		$this->_isLoggedIn = false;
-
-		$this->sessionStrategy->clear();
-		$this->cookieStrategy->clear();
-
-		if ( $this->_eventsManager instanceof Manager ) {
-			$this->_eventsManager->fire('authentication:logout', $this, null, false);
-		}
+		return $this->isSigned;
 	}
 
-	public function isLoggedIn(): bool
+	/**
+	 * Clearing authentication data
+	 */
+	public function signOut(): void
 	{
-		return $this->_isLoggedIn;
+		$this->isSigned = false;
+
+		$this->authenticatorManager->removeTokens();
 	}
 
-	protected function isLoggedWithSession(): bool
+	/**
+	 * Retrieves user from AuthenticatorManager
+	 *
+	 * @return UserInterface
+	 */
+	public function getUser(): UserInterface
 	{
-		return $this->sessionStrategy->hasData();
-	}
-
-	protected function isLoggedWithRememberCookie()
-	{
-		if ( !$this->cookieStrategy->hasData() ) {
-			return false;
+		if ( $this->user === null ) {
+			$this->user = $this->authenticatorManager->getUser();
 		}
 
-		$user = $this->cookieStrategy->getUser();
-
-		if ( $user === null ) {
-			return false;
-		}
-
-		return $this
-			->setCredentialsChecker(new WithoutPassword())
-			->setUserProvider(new Pipe($user))
-			->authenticate();
+		return $this->user;
 	}
 }

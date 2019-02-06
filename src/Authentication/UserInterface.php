@@ -4,7 +4,7 @@ namespace Lvlapc\Authentication;
 
 interface UserInterface
 {
-	public function getId(): int;
+	public function getId(): string ;
 
 	public function getUserName(): string;
 

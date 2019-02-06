@@ -5,9 +5,9 @@ namespace Lvlapc\Authentication;
 interface UserProviderInterface
 {
 	/**
-	 * @param string|null $id
+	 * Retrieves user from storage system
 	 *
 	 * @return UserInterface|null
 	 */
-	public function getUser(?string $id = null): ?UserInterface;
+	public function getUser(): ?UserInterface;
 }
