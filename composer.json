@@ -1,0 +1,22 @@
+{
+	"name": "lvlapc/phalcon-authentication",
+	"description": "Authentication service for Phalcon framework",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Sergey Gubarev",
+			"email": "lvlapc@ya.ru",
+			"role": "Developer"
+		}
+	],
+	"require": {
+		"php": "^7.1",
+		"ext-phalcon": "^3.0",
+		"lvlapc/authentication-interfaces": "^1.0"
+	},
+	"autoload": {
+		"psr-4": {
+			"Lvlapc\\": "src/"
+		}
+	}
+}
