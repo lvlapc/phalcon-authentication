@@ -30,6 +30,6 @@ class PhalconSecurity extends Component implements CredentialsCheckerInterface
 
 	public function check(UserInterface $user): bool
 	{
-		return $this->security->checkHash($this->password, $user->getPasswordHash());
+		return $this->security->checkHash($this->password, $user->getPassword());
 	}
 }

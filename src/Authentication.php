@@ -53,10 +53,6 @@ class Authentication extends Component implements AuthenticationInterface
 		$this->tokenEngine = $tokenEngine;
 
 		$this->isSigned = $this->tokenEngine->exists();
-
-		if ( $this->isSigned ) {
-			$this->userProvider = $this->tokenEngine->getUserProvider();
-		}
 	}
 
 	/**
@@ -96,47 +92,53 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function signIn(): bool
 	{
-		if ( $this->userProvider === null ) {
+		if ($this->isSigned) {
+			return true;
+		}
+
+		if ($this->userProvider === null) {
 			throw new Exception('You should set "UserProvider" before calling "signIn" method');
 		}
 
-		if ( $this->credentialsChecker === null ) {
+		if ($this->credentialsChecker === null) {
 			throw new Exception('You should set "CredentialsChecker" before calling "signIn" method');
 		}
 
 		$user = $this->userProvider->getUser();
 
-		if ( $user === null ) {
-			if ( $this->_eventsManager instanceof Manager ) {
+		if ($user === null) {
+			if ($this->_eventsManager instanceof Manager) {
 				$this->_eventsManager->fire('authentication:userNotFound', $this, null, false);
 			}
 
 			return false;
 		}
 
-		if ( $this->_eventsManager instanceof Manager ) {
+		if ($this->_eventsManager instanceof Manager) {
 			$fire = $this->_eventsManager->fire('authentication:beforeAuthenticate', $this, $user);
 
-			if ( $fire === false ) {
+			if ($fire === false) {
 				return false;
 			}
 		}
 
-		if ( !$this->credentialsChecker->check($user) ) {
-			if ( $this->_eventsManager instanceof Manager ) {
+		if (!$this->credentialsChecker->check($user)) {
+			if ($this->_eventsManager instanceof Manager) {
 				$this->_eventsManager->fire('authentication:incorrectPassword', $this, $user, false);
 			}
 
 			return false;
 		}
 
-		$this->tokenEngine->create($user);
+		if (!$this->tokenEngine->create($user)) {
+			return false;
+		}
 
 		$this->user = $user;
 
 		$this->isSigned = true;
 
-		if ( $this->_eventsManager instanceof Manager ) {
+		if ($this->_eventsManager instanceof Manager) {
 			$this->_eventsManager->fire('authentication:afterAuthenticate', $this, $user, false);
 		}
 
@@ -168,10 +170,14 @@ class Authentication extends Component implements AuthenticationInterface
 	 *
 	 * @return UserInterface
 	 */
-	public function getUser(): UserInterface
+	public function getUser(): ?UserInterface
 	{
-		if ( $this->user === null && $this->userProvider !== null ) {
-			$this->user = $this->userProvider->getUser();
+		if ($this->user === null) {
+			if ($this->userProvider !== null) {
+				$this->user = $this->userProvider->getUser();
+			} else {
+				$this->user = $this->tokenEngine->getUser();
+			}
 		}
 
 		return $this->user;
