@@ -4,10 +4,8 @@ namespace Lvlapc;
 
 use Lvlapc\Authentication\CredentialsCheckerInterface;
 use Lvlapc\Authentication\Exception;
-use Lvlapc\Authentication\TokenEngine\Composition;
-use Lvlapc\Authentication\TokenEngineInterface;
+use Lvlapc\Authentication\TokenAdapterInterface;
 use Lvlapc\Authentication\UserInterface;
-use Lvlapc\Authentication\UserProviderInterface;
 use Phalcon\Events\Manager;
 use Phalcon\Mvc\User\Component;
 
@@ -19,54 +17,23 @@ use Phalcon\Mvc\User\Component;
 class Authentication extends Component implements AuthenticationInterface
 {
 	/**
-	 * @var bool
-	 */
-	protected $isSigned = false;
-
-	/**
-	 * @var UserProviderInterface
-	 */
-	protected $userProvider;
-
-	/**
 	 * @var CredentialsCheckerInterface
 	 */
 	protected $credentialsChecker;
 
 	/**
-	 * @var Composition
+	 * @var TokenAdapterInterface
 	 */
-	protected $tokenEngine;
-
-	/**
-	 * @var UserInterface
-	 */
-	protected $user;
+	protected $tokenAdapter;
 
 	/**
 	 * Authentication constructor.
 	 *
-	 * @param TokenEngineInterface $tokenEngine
+	 * @param TokenAdapterInterface $tokenAdapter
 	 */
-	public function __construct(TokenEngineInterface $tokenEngine)
+	public function __construct(TokenAdapterInterface $tokenAdapter)
 	{
-		$this->tokenEngine = $tokenEngine;
-
-		$this->isSigned = $this->tokenEngine->exists();
-	}
-
-	/**
-	 * Sets an object which retrieves user from storage system
-	 *
-	 * @param UserProviderInterface $provider
-	 *
-	 * @return AuthenticationInterface
-	 */
-	public function setUserProvider(UserProviderInterface $provider): AuthenticationInterface
-	{
-		$this->userProvider = $provider;
-
-		return $this;
+		$this->tokenAdapter = $tokenAdapter;
 	}
 
 	/**
@@ -86,25 +53,20 @@ class Authentication extends Component implements AuthenticationInterface
 	/**
 	 * Authenticates user with UserProvider and CredentialsChecker
 	 *
+	 * @param UserInterface|null $user
 	 * @return bool
 	 *
 	 * @throws Exception
 	 */
-	public function signIn(): bool
+	public function signIn(?UserInterface $user): bool
 	{
-		if ($this->isSigned) {
+		if ($this->isSigned()) {
 			return true;
-		}
-
-		if ($this->userProvider === null) {
-			throw new Exception('You should set "UserProvider" before calling "signIn" method');
 		}
 
 		if ($this->credentialsChecker === null) {
 			throw new Exception('You should set "CredentialsChecker" before calling "signIn" method');
 		}
-
-		$user = $this->userProvider->getUser();
 
 		if ($user === null) {
 			if ($this->_eventsManager instanceof Manager) {
@@ -130,13 +92,9 @@ class Authentication extends Component implements AuthenticationInterface
 			return false;
 		}
 
-		if (!$this->tokenEngine->create($user)) {
+		if (!$this->tokenAdapter->signIn($user)) {
 			return false;
 		}
-
-		$this->user = $user;
-
-		$this->isSigned = true;
 
 		if ($this->_eventsManager instanceof Manager) {
 			$this->_eventsManager->fire('authentication:afterAuthenticate', $this, $user, false);
@@ -150,9 +108,7 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function signOut(): void
 	{
-		$this->isSigned = false;
-
-		$this->tokenEngine->remove();
+		$this->tokenAdapter->signOut();
 	}
 
 	/**
@@ -162,7 +118,7 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function isSigned(): bool
 	{
-		return $this->isSigned;
+		return $this->tokenAdapter->isSigned();
 	}
 
 	/**
@@ -172,14 +128,10 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function getUser(): ?UserInterface
 	{
-		if ($this->user === null) {
-			if ($this->userProvider !== null) {
-				$this->user = $this->userProvider->getUser();
-			} else {
-				$this->user = $this->tokenEngine->getUser();
-			}
+		if ($this->isSigned()) {
+			return $this->tokenAdapter->getUser();
 		}
 
-		return $this->user;
+		return null;
 	}
 }

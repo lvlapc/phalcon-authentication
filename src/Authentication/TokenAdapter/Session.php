@@ -1,9 +1,10 @@
 <?php
 
-namespace Lvlapc\Authentication\TokenEngine;
+namespace Lvlapc\Authentication\TokenAdapter;
 
-use Lvlapc\Authentication\TokenEngineInterface;
+use Closure;
 use Lvlapc\Authentication\UserInterface;
+use Lvlapc\AuthenticationInterface;
 use Phalcon\Mvc\User\Component;
 
 /**
@@ -11,7 +12,7 @@ use Phalcon\Mvc\User\Component;
  *
  * @package Lvlapc\Authentication\Authenticator
  */
-class Session extends Component implements TokenEngineInterface
+class Session extends Component implements AuthenticationInterface
 {
 	/**
 	 * @var string
@@ -19,17 +20,17 @@ class Session extends Component implements TokenEngineInterface
 	protected $sessionKey = 'auth';
 
 	/**
-	 * @var \Closure
+	 * @var Closure
 	 */
 	protected $userProvider;
 
 	/**
 	 * Session constructor.
 	 *
-	 * @param \Closure $userProvider
-	 * @param string   $sessionKey
+	 * @param Closure $userProvider
+	 * @param string $sessionKey
 	 */
-	public function __construct(\Closure $userProvider, string $sessionKey = 'auth')
+	public function __construct(Closure $userProvider, string $sessionKey = 'auth')
 	{
 		$this->userProvider = $userProvider;
 		$this->sessionKey   = $sessionKey;
@@ -42,8 +43,16 @@ class Session extends Component implements TokenEngineInterface
 	 *
 	 * @return bool
 	 */
-	public function create(UserInterface $user): bool
+	public function signIn(?UserInterface $user): bool
 	{
+		if ($user === null) {
+			return false;
+		}
+
+		if ($this->isSigned()) {
+			return true;
+		}
+
 		$this->session->set($this->sessionKey, [
 			'id'        => $user->getId(),
 			'userAgent' => $this->request->getUserAgent(),
@@ -57,14 +66,14 @@ class Session extends Component implements TokenEngineInterface
 	 *
 	 * @return bool
 	 */
-	public function exists(): bool
+	public function isSigned(): bool
 	{
 		if (!$this->session->has($this->sessionKey)) {
 			return false;
 		}
 
 		if ($this->getSessionData()['userAgent'] !== $this->request->getUserAgent()) {
-			$this->remove();
+			$this->signOut();
 
 			return false;
 		}
@@ -75,7 +84,7 @@ class Session extends Component implements TokenEngineInterface
 	/**
 	 * Removes token from provided engine
 	 */
-	public function remove(): void
+	public function signOut(): void
 	{
 		$this->session->remove($this->sessionKey);
 	}
