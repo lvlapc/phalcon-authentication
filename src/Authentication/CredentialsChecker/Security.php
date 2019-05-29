@@ -7,11 +7,11 @@ use Lvlapc\Authentication\UserInterface;
 use Phalcon\Mvc\User\Component;
 
 /**
- * Class PhalconSecurity
+ * Class Security
  *
  * @package Lvlapc\Authentication\CredentialsChecker
  */
-class PhalconSecurity extends Component implements CredentialsCheckerInterface
+class Security extends Component implements CredentialsCheckerInterface
 {
 	/**
 	 * @var string
@@ -19,17 +19,19 @@ class PhalconSecurity extends Component implements CredentialsCheckerInterface
 	protected $password;
 
 	/**
-	 * PhalconSecurity constructor.
+	 * Security constructor.
 	 *
 	 * @param string $password
 	 */
-	public function __construct(string $password)
+	public function __construct(string $password = '')
 	{
 		$this->password = $password;
 	}
 
 	public function check(UserInterface $user): bool
 	{
-		return $this->security->checkHash($this->password, $user->getPassword());
+		$password = empty($this->password) ? $this->request->getPost('password', ['string', 'trim']) : $this->password;
+
+		return $this->security->checkHash($password, $user->getPassword());
 	}
 }

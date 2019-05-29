@@ -2,10 +2,11 @@
 
 namespace Lvlapc;
 
+use Lvlapc\Authentication\AdapterInterface;
 use Lvlapc\Authentication\CredentialsCheckerInterface;
 use Lvlapc\Authentication\Exception;
-use Lvlapc\Authentication\TokenAdapterInterface;
 use Lvlapc\Authentication\UserInterface;
+use Lvlapc\Authentication\UserProviderInterface;
 use Phalcon\Events\Manager;
 use Phalcon\Mvc\User\Component;
 
@@ -16,57 +17,59 @@ use Phalcon\Mvc\User\Component;
  */
 class Authentication extends Component implements AuthenticationInterface
 {
-	/**
-	 * @var CredentialsCheckerInterface
-	 */
-	protected $credentialsChecker;
+	private const STATE_INITIAL = 0;
 
+	private const STATE_SIGNED = 1;
+
+	private const STATE_UNSIGNED = 2;
 	/**
-	 * @var TokenAdapterInterface
+	 * @var AdapterInterface
 	 */
 	protected $tokenAdapter;
+	/**
+	 * @var int
+	 */
+	private $state = self::STATE_INITIAL;
+	/**
+	 * @var UserInterface
+	 */
+	private $user;
 
 	/**
 	 * Authentication constructor.
 	 *
-	 * @param TokenAdapterInterface $tokenAdapter
+	 * @param AdapterInterface $tokenAdapter
 	 */
-	public function __construct(TokenAdapterInterface $tokenAdapter)
+	public function __construct(AdapterInterface $tokenAdapter)
 	{
 		$this->tokenAdapter = $tokenAdapter;
 	}
 
 	/**
-	 * Sets an object which check user credentials
+	 * Authenticates user with UserProviderInterface and CredentialsCheckerInterface
 	 *
+	 * @param UserProviderInterface       $provider
 	 * @param CredentialsCheckerInterface $checker
 	 *
-	 * @return AuthenticationInterface
-	 */
-	public function setCredentialsChecker(CredentialsCheckerInterface $checker): AuthenticationInterface
-	{
-		$this->credentialsChecker = $checker;
-
-		return $this;
-	}
-
-	/**
-	 * Authenticates user with UserProvider and CredentialsChecker
-	 *
-	 * @param UserInterface|null $user
 	 * @return bool
-	 *
-	 * @throws Exception
 	 */
-	public function signIn(?UserInterface $user): bool
+	public function signIn(UserProviderInterface $provider, CredentialsCheckerInterface $checker): bool
 	{
-		if ($this->isSigned()) {
+		if ($this->state === self::STATE_SIGNED) {
 			return true;
 		}
 
-		if ($this->credentialsChecker === null) {
-			throw new Exception('You should set "CredentialsChecker" before calling "signIn" method');
+		$this->state = self::STATE_UNSIGNED;
+
+		if ($this->_eventsManager instanceof Manager) {
+			$fire = $this->_eventsManager->fire('authentication:beforeAuthenticate', $this, null, false);
+
+			if ($fire === false) {
+				return false;
+			}
 		}
+
+		$user = $provider->getUser();
 
 		if ($user === null) {
 			if ($this->_eventsManager instanceof Manager) {
@@ -76,15 +79,7 @@ class Authentication extends Component implements AuthenticationInterface
 			return false;
 		}
 
-		if ($this->_eventsManager instanceof Manager) {
-			$fire = $this->_eventsManager->fire('authentication:beforeAuthenticate', $this, $user);
-
-			if ($fire === false) {
-				return false;
-			}
-		}
-
-		if (!$this->credentialsChecker->check($user)) {
+		if (!$checker->check($user)) {
 			if ($this->_eventsManager instanceof Manager) {
 				$this->_eventsManager->fire('authentication:incorrectPassword', $this, $user, false);
 			}
@@ -100,6 +95,10 @@ class Authentication extends Component implements AuthenticationInterface
 			$this->_eventsManager->fire('authentication:afterAuthenticate', $this, $user, false);
 		}
 
+		$this->user = $user;
+
+		$this->state = self::STATE_SIGNED;
+
 		return true;
 	}
 
@@ -108,7 +107,13 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function signOut(): void
 	{
-		$this->tokenAdapter->signOut();
+		$this->user = null;
+
+		if ($this->state === self::STATE_SIGNED) {
+			$this->tokenAdapter->signOut();
+
+			$this->state = self::STATE_UNSIGNED;
+		}
 	}
 
 	/**
@@ -118,20 +123,37 @@ class Authentication extends Component implements AuthenticationInterface
 	 */
 	public function isSigned(): bool
 	{
-		return $this->tokenAdapter->isSigned();
+		if ($this->state === self::STATE_INITIAL) {
+			$this->state = $this->tokenAdapter->isSigned() ? self::STATE_SIGNED : self::STATE_UNSIGNED;
+		}
+
+		return $this->state === self::STATE_SIGNED;
 	}
 
 	/**
 	 * Retrieves user with last set UserProvider
 	 *
 	 * @return UserInterface
+	 * @throws Exception
 	 */
 	public function getUser(): ?UserInterface
 	{
-		if ($this->isSigned()) {
-			return $this->tokenAdapter->getUser();
+		if (!$this->isSigned()) {
+			return null;
 		}
 
-		return null;
+		if ($this->user === null) {
+
+			$this->user = $this->tokenAdapter->getUser();
+
+			if ($this->user === null) {
+
+				$class = get_class($this->tokenAdapter);
+
+				throw new Exception("{$class}::getUser has null returned");
+			}
+		}
+
+		return $this->user;
 	}
 }

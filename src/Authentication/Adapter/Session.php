@@ -1,18 +1,18 @@
 <?php
 
-namespace Lvlapc\Authentication\TokenAdapter;
+namespace Lvlapc\Authentication\Adapter;
 
 use Closure;
+use Lvlapc\Authentication\AdapterInterface;
 use Lvlapc\Authentication\UserInterface;
-use Lvlapc\AuthenticationInterface;
 use Phalcon\Mvc\User\Component;
 
 /**
  * Class Session
  *
- * @package Lvlapc\Authentication\Authenticator
+ * @package Lvlapc\Authentication\Adapter
  */
-class Session extends Component implements AuthenticationInterface
+class Session extends Component implements AdapterInterface
 {
 	/**
 	 * @var string
@@ -28,7 +28,7 @@ class Session extends Component implements AuthenticationInterface
 	 * Session constructor.
 	 *
 	 * @param Closure $userProvider
-	 * @param string $sessionKey
+	 * @param string  $sessionKey
 	 */
 	public function __construct(Closure $userProvider, string $sessionKey = 'auth')
 	{
@@ -43,20 +43,16 @@ class Session extends Component implements AuthenticationInterface
 	 *
 	 * @return bool
 	 */
-	public function signIn(?UserInterface $user): bool
+	public function signIn(UserInterface $user): bool
 	{
-		if ($user === null) {
-			return false;
-		}
+		$this->signOut();
 
-		if ($this->isSigned()) {
-			return true;
-		}
-
-		$this->session->set($this->sessionKey, [
+		$value = [
 			'id'        => $user->getId(),
 			'userAgent' => $this->request->getUserAgent(),
-		]);
+		];
+
+		$this->session->set($this->sessionKey, $value);
 
 		return true;
 	}
@@ -72,7 +68,9 @@ class Session extends Component implements AuthenticationInterface
 			return false;
 		}
 
-		if ($this->getSessionData()['userAgent'] !== $this->request->getUserAgent()) {
+		$userAgent = $this->request->getUserAgent();
+
+		if ($this->getSessionData()['userAgent'] !== $userAgent) {
 			$this->signOut();
 
 			return false;
@@ -91,6 +89,10 @@ class Session extends Component implements AuthenticationInterface
 
 	public function getUser(): ?UserInterface
 	{
+		if (!$this->isSigned()) {
+			return null;
+		}
+
 		return call_user_func($this->userProvider, $this->getSessionData()['id']);
 	}
 
